@@ -1,54 +1,43 @@
-import React, { FormEvent, useState, useEffect } from 'react';
-import styled from 'styled-components';
+import React, { useState, useEffect, useRef } from 'react';
 import { useHistory } from 'react-router-dom';
 import firebase from 'firebase';
+import { SubmitHandler, FormHandles } from '@unform/core';
+import { Form } from '@unform/web';
+import * as Yup from 'yup';
 
+import { Guild, PlayerPoints } from '../../firebase/models';
+import { getUserLogged, setConcludedPage } from '../../utils/localStore';
+
+import { GroupInput } from './styles';
+import { Bar, ListPlayers, Main, MessageListPlayer } from '../../styles/global';
 import Input from '../../components/Input';
 import Button from '../../components/Button';
 import Select from '../../components/Select';
 import PlayerRegister from '../../components/PlayerRegister';
-import MenuBar from '../../components/MenuBar';
+import Menu from '../../components/Menu';
+import MessageWarn from '../../components/MessageWarn';
 
-import { Bar, Background, TitlePage, SubtitlePage, ListPlayers, MainG, Message } from '../../assents/styleds/global';
-import { getUserLogged, setConcludedPage } from '../../utils/localStore';
-
-const GroupInput = styled.div`
-    @media (min-width: 768px)
-    {
-        display: flex;
-        flex-direction: row;
-        justify-content: space-between;
-    }
-`;
-
-export interface PlayerPointsProps {
-    name_player: string;
-    atk_point: number;
-    dfs_point: number;
+interface FormData {
+    adversary_guild: string;
+    result: string;
+    points: number;
+    stars: number;
+    start_date: string;
 }
 
-interface GuildProps {
-    name: string;
-    players: string[];
-}
-
-function LastGvg() {
+const RegisterResultGvg: React.FC = () => {
     const history = useHistory();
+    const formRef = useRef<FormHandles>(null);
     const [uidGuild, setUidGuild] = useState("");
 
-    const [guild, setGuild] = useState<GuildProps>({ name: "", players: [] });
-
-    let [adversary_guild, setAdversaryGuild] = useState("");
-    let [result, setResult] = useState("");
-    let [points, setPoints] = useState("");
-    let [stars, setStars] = useState("");
-    let [start_date, setStartDate] = useState("");
+    const [guild, setGuild] = useState<Guild>({ name: "", email_recovery: '', players: [] });
 
     let [name_player, setNamePlayer] = useState("");
     let [atk_point, setAtkPoint] = useState(0);
     let [dfs_point, setDfsPoint] = useState(0);
     let [indexPlayerPoint, setIndexPlayerPoint] = useState(-1);
-    let [players_points, setPlayersPoints] = useState<PlayerPointsProps[]>([]);
+    let [players_points, setPlayersPoints] = useState<PlayerPoints[]>([]);
+    let [message, setMessage] = useState("");
 
     const resultList = [
         "Vitória",
@@ -60,7 +49,7 @@ function LastGvg() {
         setUidGuild(uid);
 
         firebase.firestore().collection('guilds').doc(uid).get().then(g => {
-            let guildItem = g.data() as GuildProps;
+            let guildItem = g.data() as Guild;
 
             setGuild(guildItem);
         });
@@ -94,52 +83,84 @@ function LastGvg() {
         setPlayersPoints([...players_points]);
     }
 
-    function registerLastGvg(e: FormEvent) {
-        e.preventDefault();
+    const handlerSubmit: SubmitHandler<FormData> = async (data) => {
+        try {
+            formRef.current?.setErrors({});
 
-        let lastGvg = {
-            adversary_guild,
-            result,
-            points,
-            stars,
-            start_date,
-            players_points,
-            uid_guild: uidGuild
+            const shema = Yup.object().shape({
+                adversary_guild: Yup.string()
+                    .required("Informe o nome da guilda adversária"),
+                result: Yup.string()
+                    .required("Informe o resultado"),
+                points: Yup.number()
+                    .integer()
+                    .typeError("Digite o número de pontos")
+                    .required("Informa a quantidade de pontos"),
+                stars: Yup.number()
+                    .typeError("Digite o número de entrelas")
+                    .required("Informe a quantidade de estrelas"),
+                start_date: Yup.string()
+                    .required("Informe a data de inicio")
+            });
+
+            await shema.validate(data, {
+                abortEarly: false
+            });
+
+            let lastGvg = {
+                adversary_guild: data.adversary_guild,
+                result: data.result,
+                points: data.points,
+                stars: data.stars,
+                start_date: data.start_date,
+                players_points,
+                uid_guild: uidGuild
+            }
+
+            firebase.firestore().collection("results_gvgs").add(lastGvg).then(() => {
+                setConcludedPage(1);
+
+                history.push("/concluded");
+            }).catch(err => {
+                setMessage("Ocorreu um erro interno ao registrar o resultado da GvG")
+            });
+        } catch (err) {
+            const validationErros: any = {
+                adversary_guild: '',
+                result: '',
+                points: 0,
+                stars: 0,
+                start_date: '',
+            };
+
+            if (err instanceof Yup.ValidationError) {
+                err.inner.forEach(({ path, message }) => {
+                    validationErros[path] = message;
+                });
+
+                formRef.current?.setErrors(validationErros);
+            }
         }
-
-        firebase.firestore().collection("lasts_results_guilds").add(lastGvg).then(() => {
-            setConcludedPage(1);
-
-            history.push("/concluded");
-        }).catch(err => {
-            alert("Ocorreu um erro interno ao registrar o resultado da GVG")
-        });
     }
 
     return (
+        <>
+            <Menu />
 
-        <Background>
-            <MenuBar linkId={1} />
+            <Main>
+                <h1>Adicionar Resultados GvG</h1>
 
-            <MainG>
-                <TitlePage>Adicionar Resultados Última GVG</TitlePage>
-
-                <form onSubmit={registerLastGvg}>
+                <Form ref={formRef} onSubmit={handlerSubmit}>
                     <GroupInput>
                         <Input
                             label="Versus Guilda"
-                            name="versusGuild"
+                            name="adversary_guild"
                             placeholder="Nome da guilda adversária"
                             type="text"
-                            value={adversary_guild}
-                            onChange={(e) => setAdversaryGuild(e.target.value)}
-                            required
                         />
                         <Select
                             label="Resultado"
                             name="result"
-                            value={result}
-                            onChange={(e) => setResult(e.target.value)}
                             options={resultList.map(r => ({ label: r, value: r }))}
                         />
                     </GroupInput>
@@ -148,33 +169,24 @@ function LastGvg() {
                             label="Pontos"
                             name="points"
                             placeholder="Pontos"
-                            type="text"
-                            value={points}
-                            onChange={(e) => setPoints(e.target.value)}
-                            required
+                            type="number"
                         />
                         <Input
                             label="Estrelas"
                             name="stars"
                             placeholder="Estrelas"
-                            type="text"
-                            value={stars}
-                            onChange={(e) => setStars(e.target.value)}
-                            required
+                            type="number"
                         />
                         <Input
                             label="Data Início"
-                            name="dataStart"
+                            name="start_date"
                             type="date"
-                            value={start_date}
-                            onChange={(e) => setStartDate(e.target.value)}
-                            required
                         />
                     </GroupInput>
 
                     <Bar />
 
-                    <SubtitlePage>Adicionar Pontuação Players</SubtitlePage>
+                    <h2>Adicionar Pontuação Players</h2>
 
                     <GroupInput>
                         <Select
@@ -205,7 +217,7 @@ function LastGvg() {
                     <Button type="button" onClick={() => handlerPlayersPoints()}>{indexPlayerPoint !== -1 ? 'Salvar' : 'Adicionar'}</Button>
 
                     <ListPlayers>
-                        {players_points.map((player: PlayerPointsProps, index) =>
+                        {players_points.map((player: PlayerPoints, index) =>
                             <PlayerRegister
                                 key={index}
                                 atkPoint={player.atk_point}
@@ -215,17 +227,19 @@ function LastGvg() {
                                 removePlayer={() => removePlayerPoint(index)}
                             />)}
                         {players_points.length === 0 && (
-                            <Message>Adicione os Players da sua guilda</Message>
+                            <MessageListPlayer>Adicione os Players da sua guilda</MessageListPlayer>
                         )}
                     </ListPlayers>
 
                     <Bar />
 
-                    <Button>Lançar pontuação</Button>
-                </form>
-            </MainG>
-        </Background>
+                    <Button>Adicionar Resultado</Button>
+                </Form>
+
+                {message !== "" && <MessageWarn messageText={message} />}
+            </Main>
+        </>
     )
 }
 
-export default LastGvg;
+export default RegisterResultGvg;

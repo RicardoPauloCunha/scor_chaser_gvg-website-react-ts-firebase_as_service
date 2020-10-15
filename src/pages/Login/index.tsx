@@ -1,50 +1,38 @@
-import React, { FormEvent, useEffect, useState } from 'react';
-import styled from 'styled-components';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useHistory } from 'react-router-dom';
+import { SubmitHandler, FormHandles } from "@unform/core";
+import { Form } from '@unform/web';
+import * as Yup from 'yup';
 import firebase from 'firebase';
 
-import { setUserLogged, getUserLogged } from '../../utils/localStore';
+import { KeysGuild } from '../../firebase/models';
+import { typeAdmin, typeMember } from '../../utils/defaultValues';
+import { setUserLogged } from '../../utils/localStore';
+import { getUserLogged } from '../../utils/localStore';
+import getValidationErros from '../../utils/getValidationErrors';
+
+import { MainLogin } from './styles';
+import { Bar, Logo, MessageLink } from '../../styles/global';
 import Input from '../../components/Input';
-import Message from '../../components/Message';
 import Button from '../../components/Button';
-import { Bar, Background, Logo } from '../../assents/styleds/global';
+import MessageWarn from '../../components/MessageWarn';
 
-const Main = styled.div`
-    width: 90%;
-    margin: 5rem auto 0 auto;
-    background-color: var(--color-strong-gray);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 7%;
-    text-align: center;
-    @media (min-width: 768px) {
-        width: 60%;
-        padding: 5%;
-    }
-    @media (min-width: 1024px) {
-        width: 40%;
-        padding: 3%;
-    }
-`;
-
-interface KeysGuildProps {
-    uid_guild: "";
-    key_member: "";
-    key_admin: "";
+interface FormDataLogin {
+    key: string
 }
 
-let typeMember: [string, string] = ["member", "key_member"];
-let typeAdmin: [string, string] = ["admin", "key_admin"];
-
-function Login() {
+const Login: React.FC = () => {
     const history = useHistory();
+    const formRef = useRef<FormHandles>(null);
 
-    let [key, setKey] = useState("");
     let [message, setMessage] = useState("");
 
-    async function verifyUserLogged() {
+    useEffect(() => {
+        verifyUserLogged();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    const verifyUserLogged = () => {
         let userLogged = getUserLogged();
 
         if (userLogged !== "") {
@@ -52,34 +40,50 @@ function Login() {
         }
     }
 
-    useEffect(() => {
-        verifyUserLogged();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    const handleSubmit: SubmitHandler<FormDataLogin> = async (data) => {
+        try {
+            formRef.current?.setErrors({});
 
-    async function login(e: FormEvent) {
-        e.preventDefault();
+            const shema = Yup.object().shape({
+                key: Yup.string()
+                .required("Informe a chave de acesso")
+            });
 
-        await verifyKey(typeMember[1]).then((hasKeyValidMember) => {
-            if (!hasKeyValidMember) {
-                verifyKey(typeAdmin[1]).then((hasKeyValidAdmin) => {
-                    if (!hasKeyValidAdmin) {
-                        setMessage("Chave Inválida");
-                    }
-                })
+            await shema.validate(data, {
+                abortEarly: false
+            });
+
+            await verifyKey(data.key, typeMember[1]).then((hasKeyValidMember) => {
+                if (hasKeyValidMember) {
+                    redirectPage();
+                } else {
+                    verifyKey(data.key, typeAdmin[1]).then((hasKeyValidAdmin) => {
+                        if (hasKeyValidAdmin) {
+                            redirectPage();
+                        } else {
+                            setMessage("Chave Inválida");
+                        }
+                    })
+                }
+            });
+        } catch (err) {
+            if (err instanceof Yup.ValidationError) {
+                const errors = getValidationErros(err);
+
+                formRef.current?.setErrors(errors);
             }
-        })
+        }
     }
 
-    async function verifyKey(labelKey: string) {
-        let hasDocs: boolean = false;
+    const verifyKey = async (key: string, labelKey: string) => {
+        let hasDocs = false;
 
         await firebase.firestore().collection("keys_guilds").where(labelKey, '==', key).get().then(snapshot => {
             hasDocs = snapshot.docs.length !== 0;
 
             if (hasDocs) {
                 snapshot.docs.forEach(doc => {
-                    let keysGuild = doc.data() as KeysGuildProps;
+                    let keysGuild = doc.data() as KeysGuild;
 
                     let userLogged = {
                         uidGuild: keysGuild.uid_guild,
@@ -87,8 +91,6 @@ function Login() {
                     }
 
                     setUserLogged(userLogged.userType, userLogged.uidGuild);
-
-                    redirectPage();
                 });
             }
         });
@@ -97,36 +99,34 @@ function Login() {
     }
 
     function redirectPage() {
-        history.push("/last-gvg");
+        history.push("/result-gvg");
     }
 
     return (
-        <Background>
-            <Main>
-                <Logo>Scor Chaser Gvg</Logo>
-                <Bar />
-                <form onSubmit={login}>
-                    <Input
-                        label="Coloque a chave de acesso da sua guilda"
-                        name="key"
-                        placeholder="Chave de acesso"
-                        value={key}
-                        onChange={(e) => setKey(e.target.value)}
-                        type="text"
-                        required
-                    />
-                    <Button>Entrar</Button>
-                </form>
+        <MainLogin>
+            <Logo>Scor Chaser Gvg</Logo>
+            <Bar />
 
-                <Link className="link--text" to="#">Esqueceu a chave?</Link>
+            <Form ref={formRef} onSubmit={handleSubmit}>
+                <Input
+                    label="Coloque a chave de acesso da sua guilda"
+                    name="key"
+                    placeholder="Chave de acesso"
+                    type="text"
+                    required
+                />
 
-                {message !== "" && <Message message={message} />}
-                
-                <Bar />
-                <p>Sua guilda ainda não foi registrada?</p>
-                <Link className="link--text" to="guild">Adicionar guilda</Link>
-            </Main>
-        </Background>
+                {message !== "" && <MessageWarn messageText={message} />}
+
+                <Button>Entrar</Button>
+            </Form>
+
+            <Link className="link--text" to="#"><MessageLink>Esqueceu a chave?</MessageLink></Link>
+
+            <Bar />
+            <p>Sua guilda ainda não foi registrada?</p>
+            <Link className="link--text" to="guild"><MessageLink>Registrar guilda</MessageLink></Link>
+        </MainLogin>
     )
 }
 

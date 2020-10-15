@@ -1,30 +1,10 @@
-import React, { SelectHTMLAttributes } from 'react';
-import styled from 'styled-components';
+import React, { useRef, useEffect } from 'react';
+import { useField } from '@unform/core';
 
-export const SelectBlock = styled.div`
-    @media (min-width: 768px)
-    {
-        margin: 0 1rem;
-        min-width: 40%;
-    }
-`;
+import {SelectBlock} from './styles';
+import MessageInput from '../MessageInput';
 
-const SelectItem = styled.select`
-    background-color: var(--color-white-smoke);
-    color: var(--color-black);
-    width: 100%;
-    padding: 0.5rem 0.9rem;
-    border-radius: 30px;
-    margin: 0.7rem 0 1rem 0;
-    border: none;
-    outline: 0;
-    border: solid 2px var(--color-white-smoke);
-    &:focus {
-        border: solid 2px var(--color-blue);
-    }
-`;
-
-interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
+interface Props {
     label: string;
     name: string;
     options: Array<{
@@ -33,25 +13,46 @@ interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
     }>;
 }
 
-const Input: React.FC<SelectProps> = ({ label, name, options, ...rest }) => {
+type SelectProps = JSX.IntrinsicElements['select'] & Props;
+
+const Select: React.FC<SelectProps> = ({ label, name, options, ...rest }) => {
+    const selectRef = useRef<HTMLSelectElement>(null);
+    const { fieldName, defaultValue, registerField, error } = useField(name);
+
+    useEffect(() => {
+        registerField({
+            name: fieldName,
+            ref: selectRef.current,
+            path: 'value',
+        });
+    }, [fieldName, registerField]);
+
     return (
         <SelectBlock>
             <label htmlFor={name}>{label}</label>
-            <SelectItem id={name} {...rest}>
+            {error && <MessageInput messageText={error} />}
+            <select
+                className="input"
+                id={name}
+                ref={selectRef}
+                defaultValue={defaultValue}
+                {...rest}
+            >
                 <option
                     key=""
                     value=""
                     disabled
                 >Selecione</option>
+
                 {options.map(option => (
                     <option
                         key={option.value}
                         value={option.value}
                     >{option.label}</option>
                 ))}
-            </SelectItem>
-        </SelectBlock>
+            </select>
+        </SelectBlock >
     )
 }
 
-export default Input;
+export default Select;
